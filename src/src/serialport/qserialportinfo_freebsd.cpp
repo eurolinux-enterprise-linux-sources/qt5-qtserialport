@@ -106,7 +106,7 @@ struct NodeInfo
 static QVector<int> mibFromName(const QString &name)
 {
     size_t mibsize = 0;
-    if (::sysctlnametomib(name.toLocal8Bit().constData(), Q_NULLPTR, &mibsize) < 0
+    if (::sysctlnametomib(name.toLocal8Bit().constData(), nullptr, &mibsize) < 0
             || mibsize == 0) {
         return QVector<int>();
     }
@@ -122,15 +122,15 @@ static QVector<int> nextOid(const QVector<int> &previousOid)
     QVector<int> mib;
     mib.append(0); // Magic undocumented code (CTL_UNSPEC ?)
     mib.append(2); // Magic undocumented code
-    foreach (int code, previousOid)
+    for (int code : previousOid)
         mib.append(code);
 
     size_t requiredLength = 0;
-    if (::sysctl(&mib[0], mib.count(), Q_NULLPTR, &requiredLength, Q_NULLPTR, 0) < 0)
+    if (::sysctl(&mib[0], mib.count(), nullptr, &requiredLength, nullptr, 0) < 0)
         return QVector<int>();
     const size_t oidLength = requiredLength / sizeof(int);
     QVector<int> oid(oidLength, 0);
-    if (::sysctl(&mib[0], mib.count(), &oid[0], &requiredLength, Q_NULLPTR, 0) < 0)
+    if (::sysctl(&mib[0], mib.count(), &oid[0], &requiredLength, nullptr, 0) < 0)
         return QVector<int>();
 
     if (previousOid.first() != oid.first())
@@ -144,32 +144,32 @@ static NodeInfo nodeForOid(const QVector<int> &oid)
     QVector<int> mib;
     mib.append(0); // Magic undocumented code (CTL_UNSPEC ?)
     mib.append(1); // Magic undocumented code
-    foreach (int code, oid)
+    for (int code : oid)
         mib.append(code);
 
     // query node name
     size_t requiredLength = 0;
-    if (::sysctl(&mib[0], mib.count(), Q_NULLPTR, &requiredLength, Q_NULLPTR, 0) < 0)
+    if (::sysctl(&mib[0], mib.count(), nullptr, &requiredLength, nullptr, 0) < 0)
         return NodeInfo();
     QByteArray name(requiredLength, 0);
-    if (::sysctl(&mib[0], mib.count(), name.data(), &requiredLength, Q_NULLPTR, 0) < 0)
+    if (::sysctl(&mib[0], mib.count(), name.data(), &requiredLength, nullptr, 0) < 0)
         return NodeInfo();
 
     // query node value
     requiredLength = 0;
-    if (::sysctl(&oid[0], oid.count(), Q_NULLPTR, &requiredLength, Q_NULLPTR, 0) < 0)
+    if (::sysctl(&oid[0], oid.count(), nullptr, &requiredLength, nullptr, 0) < 0)
         return NodeInfo();
     QByteArray value(requiredLength, 0);
-    if (::sysctl(&oid[0], oid.count(), value.data(), &requiredLength, Q_NULLPTR, 0) < 0)
+    if (::sysctl(&oid[0], oid.count(), value.data(), &requiredLength, nullptr, 0) < 0)
         return NodeInfo();
 
     // query value format
     mib[1] = 4; // Magic undocumented code
     requiredLength = 0;
-    if (::sysctl(&mib[0], mib.count(), Q_NULLPTR, &requiredLength, Q_NULLPTR, 0) < 0)
+    if (::sysctl(&mib[0], mib.count(), nullptr, &requiredLength, nullptr, 0) < 0)
         return NodeInfo();
     QByteArray buf(requiredLength, 0);
-    if (::sysctl(&mib[0], mib.count(), buf.data(), &requiredLength, Q_NULLPTR, 0) < 0)
+    if (::sysctl(&mib[0], mib.count(), buf.data(), &requiredLength, nullptr, 0) < 0)
         return NodeInfo();
 
     QDataStream in(buf);
@@ -195,7 +195,7 @@ static QList<NodeInfo> enumerateDesiredNodes(const QVector<int> &mib)
 
     QVector<int> oid = mib;
 
-    forever {
+    for (;;) {
         const QVector<int> nextoid = nextOid(oid);
         if (nextoid.isEmpty())
             break;
@@ -234,7 +234,8 @@ QList<QSerialPortInfo> QSerialPortInfo::availablePorts()
     QList<QSerialPortInfo> cuaCandidates;
     QList<QSerialPortInfo> ttyCandidates;
 
-    foreach (const QString &portName, deviceDir.entryList()) {
+    const auto portNames = deviceDir.entryList();
+    for (const QString &portName : portNames) {
         if (portName.endsWith(QLatin1String(".init"))
                 || portName.endsWith(QLatin1String(".lock"))) {
             continue;
@@ -244,7 +245,7 @@ QList<QSerialPortInfo> QSerialPortInfo::availablePorts()
         priv.portName = portName;
         priv.device = QSerialPortInfoPrivate::portNameToSystemLocation(portName);
 
-        foreach (const NodeInfo &node, nodes) {
+        for (const NodeInfo &node : nodes) {
             const int pnpinfoindex = node.name.indexOf(QLatin1String("\%pnpinfo"));
             if (pnpinfoindex == -1)
                 continue;
@@ -288,7 +289,7 @@ QList<QSerialPortInfo> QSerialPortInfo::availablePorts()
             const QString descnode = QString(QLatin1String("%1\%desc")).arg(nodebase);
 
             // search for description and manufacturer properties
-            foreach (const NodeInfo &node, nodes) {
+            for (const NodeInfo &node : nodes) {
                 if (node.name != descnode)
                     continue;
 
@@ -313,10 +314,10 @@ QList<QSerialPortInfo> QSerialPortInfo::availablePorts()
 
     QList<QSerialPortInfo> serialPortInfoList;
 
-    foreach (const QSerialPortInfo &cuaCandidate, cuaCandidates) {
+    for (const QSerialPortInfo &cuaCandidate : qAsConst(cuaCandidates)) {
         const QString cuaPortName = cuaCandidate.portName();
         const QString cuaToken = deviceProperty(cuaPortName, "cua");
-        foreach (const QSerialPortInfo &ttyCandidate, ttyCandidates) {
+        for (const QSerialPortInfo &ttyCandidate : qAsConst(ttyCandidates)) {
             const QString ttyPortName = ttyCandidate.portName();
             const QString ttyToken = deviceProperty(ttyPortName, "tty");
             if (cuaToken != ttyToken)

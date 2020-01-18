@@ -1,31 +1,26 @@
 /****************************************************************************
 **
 ** Copyright (C) 2014 Denis Shienkov <denis.shienkov@gmail.com>
-** Contact: http://www.qt.io/licensing/
+** Contact: https://www.qt.io/licensing/
 **
 ** This file is part of the QtSerialPort module of the Qt Toolkit.
 **
-** $QT_BEGIN_LICENSE:LGPL21$
+** $QT_BEGIN_LICENSE:GPL-EXCEPT$
 ** Commercial License Usage
 ** Licensees holding valid commercial Qt licenses may use this file in
 ** accordance with the commercial license agreement provided with the
 ** Software or, alternatively, in accordance with the terms contained in
 ** a written agreement between you and The Qt Company. For licensing terms
-** and conditions see http://www.qt.io/terms-conditions. For further
-** information use the contact form at http://www.qt.io/contact-us.
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
 **
-** GNU Lesser General Public License Usage
-** Alternatively, this file may be used under the terms of the GNU Lesser
-** General Public License version 2.1 or version 3 as published by the Free
-** Software Foundation and appearing in the file LICENSE.LGPLv21 and
-** LICENSE.LGPLv3 included in the packaging of this file. Please review the
-** following information to ensure the GNU Lesser General Public License
-** requirements will be met: https://www.gnu.org/licenses/lgpl.html and
-** http://www.gnu.org/licenses/old-licenses/lgpl-2.1.html.
-**
-** As a special exception, The Qt Company gives you certain additional
-** rights. These rights are described in The Qt Company LGPL Exception
-** version 1.1, included in the file LGPL_EXCEPTION.txt in this package.
+** GNU General Public License Usage
+** Alternatively, this file may be used under the terms of the GNU
+** General Public License version 3 as published by the Free Software
+** Foundation with exceptions as appearing in the file LICENSE.GPL3-EXCEPT
+** included in the packaging of this file. Please review the following
+** information to ensure the GNU General Public License requirements will
+** be met: https://www.gnu.org/licenses/gpl-3.0.html.
 **
 ** $QT_END_LICENSE$
 **
@@ -101,6 +96,10 @@ private slots:
     void flowControl_data();
     void flowControl();
 
+    void rts();
+    void dtr();
+    void independenceRtsAndDtr();
+
     void flush();
     void doubleFlush();
 
@@ -154,6 +153,7 @@ const QByteArray tst_QSerialPort::newlineArray("\n\r");
 
 tst_QSerialPort::tst_QSerialPort()
 {
+    qRegisterMetaType<QSerialPort::SerialPortError>("QSerialPort::SerialPortError");
 }
 
 void tst_QSerialPort::initTestCase()
@@ -270,7 +270,7 @@ void tst_QSerialPort::openExisting()
     QFETCH(bool, openResult);
     QFETCH(QSerialPort::SerialPortError, errorCode);
 
-    foreach (const QString &serialPortName, m_availablePortNames) {
+    for (const QString &serialPortName : qAsConst(m_availablePortNames)) {
         QSerialPort serialPort(serialPortName);
         QSignalSpy errorSpy(&serialPort, static_cast<void (QSerialPort::*)(QSerialPort::SerialPortError)>(&QSerialPort::error));
         QVERIFY(errorSpy.isValid());
@@ -471,6 +471,135 @@ void tst_QSerialPort::flowControl()
         QVERIFY(serialPort.setFlowControl(flowcontrol));
         QCOMPARE(serialPort.flowControl(), flowcontrol);
     }
+}
+
+void tst_QSerialPort::rts()
+{
+    QSerialPort serialPort(m_senderPortName);
+
+    QSignalSpy errorSpy(&serialPort, static_cast<void (QSerialPort::*)(QSerialPort::SerialPortError)>(&QSerialPort::error));
+    QVERIFY(errorSpy.isValid());
+    QSignalSpy rtsSpy(&serialPort, &QSerialPort::requestToSendChanged);
+    QVERIFY(rtsSpy.isValid());
+
+    QVERIFY(serialPort.open(QIODevice::ReadWrite));
+
+    // no flow control
+    QVERIFY(serialPort.setFlowControl(QSerialPort::NoFlowControl));
+    const bool toggle1 = !serialPort.isRequestToSend();
+    QVERIFY(serialPort.setRequestToSend(toggle1));
+    QCOMPARE(serialPort.isRequestToSend(), toggle1);
+
+    // software flow control
+    QVERIFY(serialPort.setFlowControl(QSerialPort::SoftwareControl));
+    const bool toggle2 = !serialPort.isRequestToSend();
+    QVERIFY(serialPort.setRequestToSend(toggle2));
+    QCOMPARE(serialPort.isRequestToSend(), toggle2);
+
+    // hardware flow control
+    QVERIFY(serialPort.setFlowControl(QSerialPort::HardwareControl));
+    const bool toggle3 = !serialPort.isRequestToSend();
+    QVERIFY(!serialPort.setRequestToSend(toggle3)); // not allowed
+    QCOMPARE(serialPort.isRequestToSend(), !toggle3); // same as before
+    QCOMPARE(serialPort.error(), QSerialPort::UnsupportedOperationError);
+
+    QCOMPARE(errorSpy.count(), 2);
+    QCOMPARE(qvariant_cast<QSerialPort::SerialPortError>(errorSpy.at(0).at(0)), QSerialPort::NoError);
+    QCOMPARE(qvariant_cast<QSerialPort::SerialPortError>(errorSpy.at(1).at(0)), QSerialPort::UnsupportedOperationError);
+
+    QCOMPARE(rtsSpy.count(), 2);
+    QCOMPARE(qvariant_cast<bool>(rtsSpy.at(0).at(0)), toggle1);
+    QCOMPARE(qvariant_cast<bool>(rtsSpy.at(1).at(0)), toggle2);
+}
+
+void tst_QSerialPort::dtr()
+{
+    QSerialPort serialPort(m_senderPortName);
+
+    QSignalSpy errorSpy(&serialPort, static_cast<void (QSerialPort::*)(QSerialPort::SerialPortError)>(&QSerialPort::error));
+    QVERIFY(errorSpy.isValid());
+    QSignalSpy dtrSpy(&serialPort, &QSerialPort::dataTerminalReadyChanged);
+    QVERIFY(dtrSpy.isValid());
+
+    QVERIFY(serialPort.open(QIODevice::ReadWrite));
+
+    // no flow control
+    QVERIFY(serialPort.setFlowControl(QSerialPort::NoFlowControl));
+    const bool toggle1 = !serialPort.isDataTerminalReady();
+    QVERIFY(serialPort.setDataTerminalReady(toggle1));
+    QCOMPARE(serialPort.isDataTerminalReady(), toggle1);
+
+    // software flow control
+    QVERIFY(serialPort.setFlowControl(QSerialPort::SoftwareControl));
+    const bool toggle2 = !serialPort.isDataTerminalReady();
+    QVERIFY(serialPort.setDataTerminalReady(toggle2));
+    QCOMPARE(serialPort.isDataTerminalReady(), toggle2);
+
+    // hardware flow control
+    QVERIFY(serialPort.setFlowControl(QSerialPort::HardwareControl));
+    const bool toggle3 = !serialPort.isDataTerminalReady();
+    QVERIFY(serialPort.setDataTerminalReady(toggle3));
+    QCOMPARE(serialPort.isDataTerminalReady(), toggle3);
+
+    QCOMPARE(errorSpy.count(), 1);
+    QCOMPARE(qvariant_cast<QSerialPort::SerialPortError>(errorSpy.at(0).at(0)), QSerialPort::NoError);
+
+    QCOMPARE(dtrSpy.count(), 3);
+    QCOMPARE(qvariant_cast<bool>(dtrSpy.at(0).at(0)), toggle1);
+    QCOMPARE(qvariant_cast<bool>(dtrSpy.at(1).at(0)), toggle2);
+    QCOMPARE(qvariant_cast<bool>(dtrSpy.at(2).at(0)), toggle3);
+}
+
+void tst_QSerialPort::independenceRtsAndDtr()
+{
+    QSerialPort serialPort(m_senderPortName);
+    QVERIFY(serialPort.open(QIODevice::ReadWrite)); // No flow control by default!
+
+    QVERIFY(serialPort.setDataTerminalReady(true));
+    QVERIFY(serialPort.setRequestToSend(true));
+    QVERIFY(serialPort.isDataTerminalReady());
+    QVERIFY(serialPort.isRequestToSend());
+
+    // check that DTR changing does not change RTS
+    QVERIFY(serialPort.setDataTerminalReady(false));
+    QVERIFY(!serialPort.isDataTerminalReady());
+    QVERIFY(serialPort.isRequestToSend());
+    QVERIFY(serialPort.setDataTerminalReady(true));
+    QVERIFY(serialPort.isDataTerminalReady());
+    QVERIFY(serialPort.isRequestToSend());
+
+    // check that RTS changing does not change DTR
+    QVERIFY(serialPort.setRequestToSend(false));
+    QVERIFY(!serialPort.isRequestToSend());
+    QVERIFY(serialPort.isDataTerminalReady());
+    QVERIFY(serialPort.setRequestToSend(true));
+    QVERIFY(serialPort.isRequestToSend());
+    QVERIFY(serialPort.isDataTerminalReady());
+
+    // check that baud rate changing does not change DTR or RTS
+    QVERIFY(serialPort.setBaudRate(115200));
+    QVERIFY(serialPort.isRequestToSend());
+    QVERIFY(serialPort.isDataTerminalReady());
+
+    // check that data bits changing does not change DTR or RTS
+    QVERIFY(serialPort.setDataBits(QSerialPort::Data7));
+    QVERIFY(serialPort.isRequestToSend());
+    QVERIFY(serialPort.isDataTerminalReady());
+
+    // check that parity changing does not change DTR or RTS
+    QVERIFY(serialPort.setParity(QSerialPort::EvenParity));
+    QVERIFY(serialPort.isRequestToSend());
+    QVERIFY(serialPort.isDataTerminalReady());
+
+    // check that stop bits changing does not change DTR or RTS
+    QVERIFY(serialPort.setStopBits(QSerialPort::TwoStop));
+    QVERIFY(serialPort.isRequestToSend());
+    QVERIFY(serialPort.isDataTerminalReady());
+
+    // check that software flow control changing does not change DTR or RTS
+    QVERIFY(serialPort.setFlowControl(QSerialPort::SoftwareControl));
+    QVERIFY(serialPort.isRequestToSend());
+    QVERIFY(serialPort.isDataTerminalReady());
 }
 
 void tst_QSerialPort::handleBytesWrittenAndExitLoopSlot(qint64 bytesWritten)
@@ -1000,7 +1129,7 @@ private:
 void tst_QSerialPort::synchronousReadWriteAfterAsynchronousReadWrite()
 {
     MasterTransactor master(m_senderPortName);
-    SlaveTransactor *slave = new SlaveTransactor(m_receiverPortName);
+    auto slave = new SlaveTransactor(m_receiverPortName);
 
     QThread thread;
     slave->moveToThread(&thread);
@@ -1060,9 +1189,9 @@ void tst_QSerialPort::controlBreak()
     QVERIFY2(!timeout(), "Timed out when waiting for the read of break state.");
     QVERIFY(receiverPort.bytesAvailable() > 0);
 
-    foreach (const char c, receiverPort.readAll()) {
-        QCOMPARE(c, char(0));
-    }
+    const QByteArray actual = receiverPort.readAll();
+    const QByteArray expected(actual.size(), '\0');
+    QCOMPARE(actual, expected);
 
     QVERIFY(senderPort.setBreakEnabled(false));
     QCOMPARE(senderPort.isBreakEnabled(), false);

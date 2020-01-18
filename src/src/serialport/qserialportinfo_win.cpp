@@ -3,31 +3,37 @@
 ** Copyright (C) 2011-2012 Denis Shienkov <denis.shienkov@gmail.com>
 ** Copyright (C) 2011 Sergey Belyashov <Sergey.Belyashov@gmail.com>
 ** Copyright (C) 2012 Laszlo Papp <lpapp@kde.org>
-** Contact: http://www.qt.io/licensing/
+** Contact: https://www.qt.io/licensing/
 **
 ** This file is part of the QtSerialPort module of the Qt Toolkit.
 **
-** $QT_BEGIN_LICENSE:LGPL21$
+** $QT_BEGIN_LICENSE:LGPL$
 ** Commercial License Usage
 ** Licensees holding valid commercial Qt licenses may use this file in
 ** accordance with the commercial license agreement provided with the
 ** Software or, alternatively, in accordance with the terms contained in
 ** a written agreement between you and The Qt Company. For licensing terms
-** and conditions see http://www.qt.io/terms-conditions. For further
-** information use the contact form at http://www.qt.io/contact-us.
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
 **
 ** GNU Lesser General Public License Usage
 ** Alternatively, this file may be used under the terms of the GNU Lesser
-** General Public License version 2.1 or version 3 as published by the Free
-** Software Foundation and appearing in the file LICENSE.LGPLv21 and
-** LICENSE.LGPLv3 included in the packaging of this file. Please review the
-** following information to ensure the GNU Lesser General Public License
-** requirements will be met: https://www.gnu.org/licenses/lgpl.html and
-** http://www.gnu.org/licenses/old-licenses/lgpl-2.1.html.
+** General Public License version 3 as published by the Free Software
+** Foundation and appearing in the file LICENSE.LGPL3 included in the
+** packaging of this file. Please review the following information to
+** ensure the GNU Lesser General Public License version 3 requirements
+** will be met: https://www.gnu.org/licenses/lgpl-3.0.html.
 **
-** As a special exception, The Qt Company gives you certain additional
-** rights. These rights are described in The Qt Company LGPL Exception
-** version 1.1, included in the file LGPL_EXCEPTION.txt in this package.
+** GNU General Public License Usage
+** Alternatively, this file may be used under the terms of the GNU
+** General Public License version 2.0 or (at your option) the GNU General
+** Public license version 3 or any later version approved by the KDE Free
+** Qt Foundation. The licenses are as published by the Free Software
+** Foundation and appearing in the file LICENSE.GPL2 and LICENSE.GPL3
+** included in the packaging of this file. Please review the following
+** information to ensure the GNU General Public License requirements will
+** be met: https://www.gnu.org/licenses/gpl-2.0.html and
+** https://www.gnu.org/licenses/gpl-3.0.html.
 **
 ** $QT_END_LICENSE$
 **
@@ -59,7 +65,7 @@ QT_BEGIN_NAMESPACE
 
 static QStringList portNamesFromHardwareDeviceMap()
 {
-    HKEY hKey = Q_NULLPTR;
+    HKEY hKey = nullptr;
     if (::RegOpenKeyEx(HKEY_LOCAL_MACHINE, L"HARDWARE\\DEVICEMAP\\SERIALCOMM", 0, KEY_QUERY_VALUE, &hKey) != ERROR_SUCCESS)
         return QStringList();
 
@@ -73,10 +79,10 @@ static QStringList portNamesFromHardwareDeviceMap()
     std::vector<wchar_t> outputValueName(MaximumValueNameInChars, 0);
     std::vector<wchar_t> outputBuffer(MAX_PATH + 1, 0);
     DWORD bytesRequired = MAX_PATH;
-    forever {
+    for (;;) {
         DWORD requiredValueNameChars = MaximumValueNameInChars;
         const LONG ret = ::RegEnumValue(hKey, index, &outputValueName[0], &requiredValueNameChars,
-                                        Q_NULLPTR, Q_NULLPTR, reinterpret_cast<PBYTE>(&outputBuffer[0]), &bytesRequired);
+                                        nullptr, nullptr, reinterpret_cast<PBYTE>(&outputBuffer[0]), &bytesRequired);
         if (ret == ERROR_MORE_DATA) {
             outputBuffer.resize(bytesRequired / sizeof(wchar_t) + 2, 0);
         } else if (ret == ERROR_SUCCESS) {
@@ -97,7 +103,7 @@ static QString deviceRegistryProperty(HDEVINFO deviceInfoSet,
     DWORD dataType = 0;
     std::vector<wchar_t> outputBuffer(MAX_PATH + 1, 0);
     DWORD bytesRequired = MAX_PATH;
-    forever {
+    for (;;) {
         if (::SetupDiGetDeviceRegistryProperty(deviceInfoSet, deviceInfoData, property, &dataType,
                                                reinterpret_cast<PBYTE>(&outputBuffer[0]),
                                                bytesRequired, &bytesRequired)) {
@@ -152,15 +158,15 @@ static QString devicePortName(HDEVINFO deviceInfoSet, PSP_DEVINFO_DATA deviceInf
             L"PortNumber\0"
     };
 
-    static const int keyTokensCount = sizeof(keyTokens) / sizeof(keyTokens[0]);
+    enum { KeyTokensCount = sizeof(keyTokens) / sizeof(keyTokens[0]) };
 
     QString portName;
-    for (int i = 0; i < keyTokensCount; ++i) {
+    for (int i = 0; i < KeyTokensCount; ++i) {
         DWORD dataType = 0;
         std::vector<wchar_t> outputBuffer(MAX_PATH + 1, 0);
         DWORD bytesRequired = MAX_PATH;
-        forever {
-            const LONG ret = ::RegQueryValueEx(key, keyTokens[i], Q_NULLPTR, &dataType,
+        for (;;) {
+            const LONG ret = ::RegQueryValueEx(key, keyTokens[i], nullptr, &dataType,
                                                reinterpret_cast<PBYTE>(&outputBuffer[0]), &bytesRequired);
             if (ret == ERROR_MORE_DATA) {
                 outputBuffer.resize(bytesRequired / sizeof(wchar_t) + 2, 0);
@@ -180,23 +186,6 @@ static QString devicePortName(HDEVINFO deviceInfoSet, PSP_DEVINFO_DATA deviceInf
     ::RegCloseKey(key);
     return portName;
 }
-
-class SerialPortNameEqualFunctor
-{
-public:
-    explicit SerialPortNameEqualFunctor(const QString &serialPortName)
-        : m_serialPortName(serialPortName)
-    {
-    }
-
-    bool operator() (const QSerialPortInfo &serialPortInfo) const
-    {
-        return serialPortInfo.portName() == m_serialPortName;
-    }
-
-private:
-    const QString &m_serialPortName;
-};
 
 static QString deviceDescription(HDEVINFO deviceInfoSet,
                                  PSP_DEVINFO_DATA deviceInfoData)
@@ -267,7 +256,7 @@ static QString parseDeviceSerialNumber(const QString &instanceIdentifier)
 static QString deviceSerialNumber(QString instanceIdentifier,
                                   DEVINST deviceInstanceNumber)
 {
-    forever {
+    for (;;) {
         const QString result = parseDeviceSerialNumber(instanceIdentifier);
         if (!result.isEmpty())
             return result;
@@ -282,6 +271,15 @@ static QString deviceSerialNumber(QString instanceIdentifier,
     return QString();
 }
 
+static bool anyOfPorts(const QList<QSerialPortInfo> &ports, const QString &portName)
+{
+    const auto end = ports.end();
+    auto isPortNamesEquals = [&portName](const QSerialPortInfo &portInfo) {
+        return portInfo.portName() == portName;
+    };
+    return std::find_if(ports.begin(), end, isPortNamesEquals) != end;
+}
+
 QList<QSerialPortInfo> QSerialPortInfo::availablePorts()
 {
     static const struct {
@@ -293,12 +291,12 @@ QList<QSerialPortInfo> QSerialPortInfo::availablePorts()
         { GUID_DEVINTERFACE_MODEM, DIGCF_PRESENT | DIGCF_DEVICEINTERFACE }
     };
 
-    static const int setupTokensCount = sizeof(setupTokens) / sizeof(setupTokens[0]);
+    enum { SetupTokensCount = sizeof(setupTokens) / sizeof(setupTokens[0]) };
 
     QList<QSerialPortInfo> serialPortInfoList;
 
-    for (int i = 0; i < setupTokensCount; ++i) {
-        const HDEVINFO deviceInfoSet = ::SetupDiGetClassDevs(&setupTokens[i].guid, Q_NULLPTR, Q_NULLPTR, setupTokens[i].flags);
+    for (int i = 0; i < SetupTokensCount; ++i) {
+        const HDEVINFO deviceInfoSet = ::SetupDiGetClassDevs(&setupTokens[i].guid, nullptr, nullptr, setupTokens[i].flags);
         if (deviceInfoSet == INVALID_HANDLE_VALUE)
             return serialPortInfoList;
 
@@ -312,10 +310,8 @@ QList<QSerialPortInfo> QSerialPortInfo::availablePorts()
             if (portName.isEmpty() || portName.contains(QLatin1String("LPT")))
                 continue;
 
-            if (std::find_if(serialPortInfoList.begin(), serialPortInfoList.end(),
-                             SerialPortNameEqualFunctor(portName)) != serialPortInfoList.end()) {
+            if (anyOfPorts(serialPortInfoList, portName))
                 continue;
-            }
 
             QSerialPortInfoPrivate priv;
 
@@ -338,9 +334,9 @@ QList<QSerialPortInfo> QSerialPortInfo::availablePorts()
         ::SetupDiDestroyDeviceInfoList(deviceInfoSet);
     }
 
-    foreach (const QString &portName, portNamesFromHardwareDeviceMap()) {
-        if (std::find_if(serialPortInfoList.begin(), serialPortInfoList.end(),
-                         SerialPortNameEqualFunctor(portName)) == serialPortInfoList.end()) {
+    const auto portNames = portNamesFromHardwareDeviceMap();
+    for (const QString &portName : portNames) {
+        if (!anyOfPorts(serialPortInfoList, portName)) {
             QSerialPortInfoPrivate priv;
             priv.portName = portName;
             priv.device =  QSerialPortInfoPrivate::portNameToSystemLocation(portName);
@@ -355,7 +351,7 @@ QList<QSerialPortInfo> QSerialPortInfo::availablePorts()
 bool QSerialPortInfo::isBusy() const
 {
     const HANDLE handle = ::CreateFile(reinterpret_cast<const wchar_t*>(systemLocation().utf16()),
-                                           GENERIC_READ | GENERIC_WRITE, 0, NULL, OPEN_EXISTING, 0, Q_NULLPTR);
+                                           GENERIC_READ | GENERIC_WRITE, 0, nullptr, OPEN_EXISTING, 0, nullptr);
 
     if (handle == INVALID_HANDLE_VALUE) {
         if (::GetLastError() == ERROR_ACCESS_DENIED)
@@ -371,7 +367,7 @@ bool QSerialPortInfo::isBusy() const
 bool QSerialPortInfo::isValid() const
 {
     const HANDLE handle = ::CreateFile(reinterpret_cast<const wchar_t*>(systemLocation().utf16()),
-                                           GENERIC_READ | GENERIC_WRITE, 0, NULL, OPEN_EXISTING, 0, Q_NULLPTR);
+                                           GENERIC_READ | GENERIC_WRITE, 0, nullptr, OPEN_EXISTING, 0, nullptr);
 
     if (handle == INVALID_HANDLE_VALUE) {
         if (::GetLastError() != ERROR_ACCESS_DENIED)

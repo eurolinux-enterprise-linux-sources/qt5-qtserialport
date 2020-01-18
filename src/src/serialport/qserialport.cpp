@@ -4,31 +4,37 @@
 ** Copyright (C) 2011 Sergey Belyashov <Sergey.Belyashov@gmail.com>
 ** Copyright (C) 2012 Laszlo Papp <lpapp@kde.org>
 ** Copyright (C) 2012 Andre Hartmann <aha_1980@gmx.de>
-** Contact: http://www.qt.io/licensing/
+** Contact: https://www.qt.io/licensing/
 **
 ** This file is part of the QtSerialPort module of the Qt Toolkit.
 **
-** $QT_BEGIN_LICENSE:LGPL21$
+** $QT_BEGIN_LICENSE:LGPL$
 ** Commercial License Usage
 ** Licensees holding valid commercial Qt licenses may use this file in
 ** accordance with the commercial license agreement provided with the
 ** Software or, alternatively, in accordance with the terms contained in
 ** a written agreement between you and The Qt Company. For licensing terms
-** and conditions see http://www.qt.io/terms-conditions. For further
-** information use the contact form at http://www.qt.io/contact-us.
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
 **
 ** GNU Lesser General Public License Usage
 ** Alternatively, this file may be used under the terms of the GNU Lesser
-** General Public License version 2.1 or version 3 as published by the Free
-** Software Foundation and appearing in the file LICENSE.LGPLv21 and
-** LICENSE.LGPLv3 included in the packaging of this file. Please review the
-** following information to ensure the GNU Lesser General Public License
-** requirements will be met: https://www.gnu.org/licenses/lgpl.html and
-** http://www.gnu.org/licenses/old-licenses/lgpl-2.1.html.
+** General Public License version 3 as published by the Free Software
+** Foundation and appearing in the file LICENSE.LGPL3 included in the
+** packaging of this file. Please review the following information to
+** ensure the GNU Lesser General Public License version 3 requirements
+** will be met: https://www.gnu.org/licenses/lgpl-3.0.html.
 **
-** As a special exception, The Qt Company gives you certain additional
-** rights. These rights are described in The Qt Company LGPL Exception
-** version 1.1, included in the file LGPL_EXCEPTION.txt in this package.
+** GNU General Public License Usage
+** Alternatively, this file may be used under the terms of the GNU
+** General Public License version 2.0 or (at your option) the GNU General
+** Public license version 3 or any later version approved by the KDE Free
+** Qt Foundation. The licenses are as published by the Free Software
+** Foundation and appearing in the file LICENSE.GPL2 and LICENSE.GPL3
+** included in the packaging of this file. Please review the following
+** information to ensure the GNU General Public License requirements will
+** be met: https://www.gnu.org/licenses/gpl-2.0.html and
+** https://www.gnu.org/licenses/gpl-3.0.html.
 **
 ** $QT_END_LICENSE$
 **
@@ -82,7 +88,6 @@ QSerialPortErrorInfo::QSerialPortErrorInfo(QSerialPort::SerialPortError newError
 
 QSerialPortPrivate::QSerialPortPrivate()
     : readBufferMaxSize(0)
-    , writeBuffer(InitialBufferSize)
     , error(QSerialPort::NoError)
     , inputBaudRate(9600)
     , outputBaudRate(9600)
@@ -94,10 +99,7 @@ QSerialPortPrivate::QSerialPortPrivate()
     , settingsRestoredOnClose(true)
 #endif
     , isBreakEnabled(false)
-#if defined(Q_OS_WINCE)
-    , handle(INVALID_HANDLE_VALUE)
-    , eventNotifier(0)
-#elif defined(Q_OS_WIN32)
+#if defined(Q_OS_WIN32)
     , handle(INVALID_HANDLE_VALUE)
     , readChunkBuffer(ReadChunkSize, 0)
     , communicationStarted(false)
@@ -120,6 +122,7 @@ QSerialPortPrivate::QSerialPortPrivate()
     , writeSequenceStarted(false)
 #endif
 {
+    writeBufferChunkSize = InitialBufferSize;
 }
 
 void QSerialPortPrivate::setError(const QSerialPortErrorInfo &errorInfo)
@@ -128,6 +131,7 @@ void QSerialPortPrivate::setError(const QSerialPortErrorInfo &errorInfo)
 
     error = errorInfo.errorCode;
     q->setErrorString(errorInfo.errorString);
+    emit q->errorOccurred(error);
     emit q->error(error);
 }
 
@@ -194,7 +198,7 @@ void QSerialPortPrivate::setError(const QSerialPortErrorInfo &errorInfo)
      int numRead = 0, numReadTotal = 0;
      char buffer[50];
 
-     forever {
+     for (;;) {
          numRead  = serial.read(buffer, 50);
 
          // Do whatever with the array
@@ -205,8 +209,12 @@ void QSerialPortPrivate::setError(const QSerialPortErrorInfo &errorInfo)
      }
     \endcode
 
-    If \l{QIODevice::}{waitForReadyRead()} returns false, the
+    If \l{QIODevice::}{waitForReadyRead()} returns \c false, the
     connection has been closed or an error has occurred.
+
+    If an error occurs at any point in time, QSerialPort will emit the
+    errorOccurred() signal. You can also call error() to find the type of
+    error that occurred last.
 
     Programming with a blocking serial port is radically different from
     programming with a non-blocking serial port. A blocking serial port
@@ -525,10 +533,6 @@ void QSerialPort::setPort(const QSerialPortInfo &serialPortInfo)
         \li Removes the prefix "\\\\.\\" or "//./" from the system location
            and returns the remainder of the string.
     \row
-        \li Windows CE
-        \li Removes the suffix ":" from the system location
-           and returns the remainder of the string.
-    \row
         \li Unix, BSD
         \li Removes the prefix "/dev/" from the system location
            and returns the remainder of the string.
@@ -545,11 +549,11 @@ QString QSerialPort::portName() const
 /*!
     \reimp
 
-    Opens the serial port using OpenMode \a mode, and then returns true if
-    successful; otherwise returns false and sets an error code which can be
+    Opens the serial port using OpenMode \a mode, and then returns \c true if
+    successful; otherwise returns \c false and sets an error code which can be
     obtained by calling the error() method.
 
-    \note The method returns false if opening the port is successful, but could
+    \note The method returns \c false if opening the port is successful, but could
     not set any of the port settings successfully. In that case, the port is
     closed automatically not to leave the port around with incorrect settings.
 
@@ -578,15 +582,6 @@ bool QSerialPort::open(OpenMode mode)
     if (!d->open(mode))
         return false;
 
-    if (!d->setBaudRate()
-        || !d->setDataBits(d->dataBits)
-        || !d->setParity(d->parity)
-        || !d->setStopBits(d->stopBits)
-        || !d->setFlowControl(d->flowControl)) {
-        d->close();
-        return false;
-    }
-
     QIODevice::open(mode);
     return true;
 }
@@ -612,6 +607,9 @@ void QSerialPort::close()
     QIODevice::close();
 }
 
+QT_WARNING_PUSH
+QT_WARNING_DISABLE_DEPRECATED
+
 #if QT_DEPRECATED_SINCE(5, 3)
 /*!
     \property QSerialPort::settingsRestoredOnClose
@@ -619,7 +617,7 @@ void QSerialPort::close()
     the serial port.
     \obsolete
 
-    If this flag is true, the settings will be restored; otherwise not.
+    If this flag is \c true, the settings will be restored; otherwise not.
     The default state of the QSerialPort class is to restore the
     settings.
 */
@@ -632,6 +630,8 @@ void QSerialPort::setSettingsRestoredOnClose(bool restore)
         emit settingsRestoredOnCloseChanged(d->settingsRestoredOnClose);
     }
 }
+
+QT_WARNING_POP
 
 bool QSerialPort::settingsRestoredOnClose() const
 {
@@ -658,8 +658,8 @@ bool QSerialPort::settingsRestoredOnClose() const
     \property QSerialPort::baudRate
     \brief the data baud rate for the desired direction
 
-    If the setting is successful or set before opening the port, returns true;
-    otherwise returns false and sets an error code which can be obtained by
+    If the setting is successful or set before opening the port, returns \c true;
+    otherwise returns \c false and sets an error code which can be obtained by
     accessing the value of the QSerialPort::error property. To set the baud
     rate, use the enumeration QSerialPort::BaudRate or any positive qint32
     value.
@@ -669,9 +669,9 @@ bool QSerialPort::settingsRestoredOnClose() const
     after that the opening of the port succeeds.
 
     \warning Setting the AllDirections flag is supported on all platforms.
-    Windows and Windows CE support only this mode.
+    Windows supports only this mode.
 
-    \warning Returns equal baud rate in any direction on Windows, Windows CE.
+    \warning Returns equal baud rate in any direction on Windows.
 
     The default value is Baud9600, i.e. 9600 bits per second.
 */
@@ -726,7 +726,7 @@ qint32 QSerialPort::baudRate(Directions directions) const
     \brief the data bits in a frame
 
     If the setting is successful or set before opening the port, returns
-    true; otherwise returns false and sets an error code which can be obtained
+    \c true; otherwise returns \c false and sets an error code which can be obtained
     by accessing the value of the QSerialPort::error property.
 
     \note If the setting is set before opening the port, the actual serial port
@@ -770,8 +770,8 @@ QSerialPort::DataBits QSerialPort::dataBits() const
     \property QSerialPort::parity
     \brief the parity checking mode
 
-    If the setting is successful or set before opening the port, returns true;
-    otherwise returns false and sets an error code which can be obtained by
+    If the setting is successful or set before opening the port, returns \c true;
+    otherwise returns \c false and sets an error code which can be obtained by
     accessing the value of the QSerialPort::error property.
 
     \note If the setting is set before opening the port, the actual serial port
@@ -814,8 +814,8 @@ QSerialPort::Parity QSerialPort::parity() const
     \property QSerialPort::stopBits
     \brief the number of stop bits in a frame
 
-    If the setting is successful or set before opening the port, returns true;
-    otherwise returns false and sets an error code which can be obtained by
+    If the setting is successful or set before opening the port, returns \c true;
+    otherwise returns \c false and sets an error code which can be obtained by
     accessing the value of the QSerialPort::error property.
 
     \note If the setting is set before opening the port, the actual serial port
@@ -858,8 +858,8 @@ QSerialPort::StopBits QSerialPort::stopBits() const
     \property QSerialPort::flowControl
     \brief the desired flow control mode
 
-    If the setting is successful or set before opening the port, returns true;
-    otherwise returns false and sets an error code which can be obtained by
+    If the setting is successful or set before opening the port, returns \c true;
+    otherwise returns \c false and sets an error code which can be obtained by
     accessing the value of the QSerialPort::error property.
 
     \note If the setting is set before opening the port, the actual serial port
@@ -902,11 +902,11 @@ QSerialPort::FlowControl QSerialPort::flowControl() const
     \property QSerialPort::dataTerminalReady
     \brief the state (high or low) of the line signal DTR
 
-    Returns true on success, false otherwise.
-    If the flag is true then the DTR signal is set to high; otherwise low.
+    Returns \c true on success, \c false otherwise.
+    If the flag is \c true then the DTR signal is set to high; otherwise low.
 
     \note The serial port has to be open before trying to set or get this
-    property; otherwise false is returned and the error code is set to
+    property; otherwise \c false is returned and the error code is set to
     NotOpenError.
 
     \sa pinoutSignals()
@@ -949,12 +949,16 @@ bool QSerialPort::isDataTerminalReady()
     \property QSerialPort::requestToSend
     \brief the state (high or low) of the line signal RTS
 
-    Returns true on success, false otherwise.
-    If the flag is true then the RTS signal is set to high; otherwise low.
+    Returns \c true on success, \c false otherwise.
+    If the flag is \c true then the RTS signal is set to high; otherwise low.
 
     \note The serial port has to be open before trying to set or get this
-    property; otherwise false is returned and the error code is set to
+    property; otherwise \c false is returned and the error code is set to
     NotOpenError.
+
+    \note An attempt to control the RTS signal in the HardwareControl mode
+    will fail with error code set to UnsupportedOperationError, because
+    the signal is automatically controlled by the driver.
 
     \sa pinoutSignals()
 */
@@ -1029,7 +1033,7 @@ QSerialPort::PinoutSignals QSerialPort::pinoutSignals()
 /*!
     This function writes as much as possible from the internal write
     buffer to the underlying serial port without blocking. If any data
-    was written, this function returns true; otherwise returns false.
+    was written, this function returns \c true; otherwise returns \c false.
 
     Call this function for sending the buffered data immediately to the serial
     port. The number of bytes successfully written depends on the operating
@@ -1039,7 +1043,7 @@ QSerialPort::PinoutSignals QSerialPort::pinoutSignals()
     waitForBytesWritten() instead.
 
     \note The serial port has to be open before trying to flush any buffered
-    data; otherwise returns false and sets the NotOpenError error code.
+    data; otherwise returns \c false and sets the NotOpenError error code.
 
     \sa write(), waitForBytesWritten()
 */
@@ -1060,10 +1064,10 @@ bool QSerialPort::flush()
     Discards all characters from the output or input buffer, depending on
     given directions \a directions. This includes clearing the internal class buffers and
     the UART (driver) buffers. Also terminate pending read or write operations.
-    If successful, returns true; otherwise returns false.
+    If successful, returns \c true; otherwise returns \c false.
 
     \note The serial port has to be open before trying to clear any buffered
-    data; otherwise returns false and sets the NotOpenError error code.
+    data; otherwise returns \c false and sets the NotOpenError error code.
 */
 bool QSerialPort::clear(Directions directions)
 {
@@ -1085,8 +1089,8 @@ bool QSerialPort::clear(Directions directions)
 /*!
     \reimp
 
-    Returns true if no more data is currently available for reading; otherwise
-    returns false.
+    Returns \c true if no more data is currently available for reading; otherwise
+    returns \c false.
 
     This function is most commonly used when reading data from the
     serial port in a loop. For example:
@@ -1106,8 +1110,7 @@ bool QSerialPort::clear(Directions directions)
  */
 bool QSerialPort::atEnd() const
 {
-    Q_D(const QSerialPort);
-    return QIODevice::atEnd() && (!isOpen() || (d->buffer.size() == 0));
+    return QIODevice::atEnd();
 }
 
 #if QT_DEPRECATED_SINCE(5, 2)
@@ -1117,11 +1120,11 @@ bool QSerialPort::atEnd() const
     a parity error is detected.
     \obsolete
 
-    If the setting is successful, returns true; otherwise returns false. The
+    If the setting is successful, returns \c true; otherwise returns \c false. The
     default policy set is IgnorePolicy.
 
     \note The serial port has to be open before trying to set this property;
-    otherwise returns false and sets the NotOpenError error code. This is a bit
+    otherwise returns \c false and sets the NotOpenError error code. This is a bit
     unusual as opposed to the regular Qt property settings of a class. However,
     this is a special use case since the property is set through the interaction
     with the kernel and hardware. Hence, the two scenarios cannot be completely
@@ -1171,7 +1174,7 @@ QSerialPort::DataErrorPolicy QSerialPort::dataErrorPolicy() const
     \brief the error status of the serial port
 
     The I/O device status returns an error code. For example, if open()
-    returns false, or a read/write operation returns -1, this property can
+    returns \c false, or a read/write operation returns \c -1, this property can
     be used to figure out the reason why the operation failed.
 
     The error code is set to the default QSerialPort::NoError after a call to
@@ -1191,9 +1194,17 @@ void QSerialPort::clearError()
 
 /*!
     \fn void QSerialPort::error(SerialPortError error)
+    \obsolete
 
-    This signal is emitted after the error has been changed. The new error
-    is passed as \a error.
+    Use errorOccurred() instead.
+*/
+
+/*!
+    \fn void QSerialPort::errorOccurred(SerialPortError error)
+    \since 5.8
+
+    This signal is emitted when an error occurs in the serial port.
+    The specified \a error describes the type of error that occurred.
 
     \sa QSerialPort::error
 */
@@ -1203,7 +1214,7 @@ void QSerialPort::clearError()
     amount of data that the client can receive before calling the read()
     or readAll() methods.
 
-    A read buffer size of 0 (the default) means that the buffer has
+    A read buffer size of \c 0 (the default) means that the buffer has
     no size limit, ensuring that no data is lost.
 
     \sa setReadBufferSize(), read()
@@ -1220,7 +1231,7 @@ qint64 QSerialPort::readBufferSize() const
 
     If the buffer size is limited to a certain size, QSerialPort
     will not buffer more than this size of data. The special case of a buffer
-    size of 0 means that the read buffer is unlimited and all
+    size of \c 0 means that the read buffer is unlimited and all
     incoming data is buffered. This is the default.
 
     This option is useful if the data is only read at certain points
@@ -1242,7 +1253,7 @@ void QSerialPort::setReadBufferSize(qint64 size)
 /*!
     \reimp
 
-    Always returns true. The serial port is a sequential device.
+    Always returns \c true. The serial port is a sequential device.
 */
 bool QSerialPort::isSequential() const
 {
@@ -1272,15 +1283,18 @@ qint64 QSerialPort::bytesAvailable() const
 */
 qint64 QSerialPort::bytesToWrite() const
 {
-    Q_D(const QSerialPort);
-    return QIODevice::bytesToWrite() + d->writeBuffer.size();
+    qint64 pendingBytes = QIODevice::bytesToWrite();
+#if defined(Q_OS_WIN32)
+    pendingBytes += d_func()->writeChunkBuffer.size();
+#endif
+    return pendingBytes;
 }
 
 /*!
     \reimp
 
-    Returns true if a line of data can be read from the serial port;
-    otherwise returns false.
+    Returns \c true if a line of data can be read from the serial port;
+    otherwise returns \c false.
 
     \sa readLine()
 */
@@ -1294,10 +1308,11 @@ bool QSerialPort::canReadLine() const
 
     This function blocks until new data is available for reading and the
     \l{QIODevice::}{readyRead()} signal has been emitted. The function
-    will timeout after \a msecs milliseconds.
+    will timeout after \a msecs milliseconds; the default timeout is
+    30000 milliseconds.
 
-    The function returns true if the readyRead() signal is emitted and
-    there is new data available for reading; otherwise it returns false
+    The function returns \c true if the readyRead() signal is emitted and
+    there is new data available for reading; otherwise it returns \c false
     (if an error occurred or the operation timed out).
 
     \sa waitForBytesWritten()
@@ -1313,7 +1328,7 @@ bool QSerialPort::waitForReadyRead(int msecs)
     \since 5.2
 
     If the platform is supported and the serial port is open, returns the native
-    serial port handle; otherwise returns -1.
+    serial port handle; otherwise returns \c -1.
 
     \warning This function is for expert use only; use it at your own risk.
     Furthermore, this function carries no compatibility promise between minor
@@ -1322,6 +1337,14 @@ bool QSerialPort::waitForReadyRead(int msecs)
 
 /*!
     \reimp
+
+    This function blocks until at least one byte has been written to the serial
+    port and the \l{QIODevice::}{bytesWritten()} signal has been emitted. The
+    function will timeout after \a msecs milliseconds; the default timeout is
+    30000 milliseconds.
+
+    The function returns \c true if the bytesWritten() signal is emitted; otherwise
+    it returns \c false (if an error occurred or the operation timed out).
 */
 bool QSerialPort::waitForBytesWritten(int msecs)
 {
@@ -1333,16 +1356,16 @@ bool QSerialPort::waitForBytesWritten(int msecs)
 /*!
     Sends a continuous stream of zero bits during a specified period
     of time \a duration in msec if the terminal is using asynchronous
-    serial data. If successful, returns true; otherwise returns false.
+    serial data. If successful, returns \c true; otherwise returns \c false.
 
     If the duration is zero then zero bits are transmitted by at least
-    0.25 seconds, but no more than 0.5 seconds.
+    \c 0.25 seconds, but no more than \c 0.5 seconds.
 
     If the duration is non zero then zero bits are transmitted within a certain
     period of time depending on the implementation.
 
     \note The serial port has to be open before trying to send a break
-    duration; otherwise returns false and sets the NotOpenError error code.
+    duration; otherwise returns \c false and sets the NotOpenError error code.
 
     \sa setBreakEnabled()
 */
@@ -1365,12 +1388,12 @@ bool QSerialPort::sendBreak(int duration)
     \since 5.5
     \brief the state of the transmission line in break
 
-    Returns true on success, false otherwise.
-    If the flag is true then the transmission line is in break state;
+    Returns \c true on success, \c false otherwise.
+    If the flag is \c true then the transmission line is in break state;
     otherwise is in non-break state.
 
     \note The serial port has to be open before trying to set or get this
-    property; otherwise returns false and sets the NotOpenError error code.
+    property; otherwise returns \c false and sets the NotOpenError error code.
     This is a bit unusual as opposed to the regular Qt property settings of
     a class. However, this is a special use case since the property is set
     through the interaction with the kernel and hardware. Hence, the two

@@ -1,6 +1,6 @@
 INCLUDEPATH += $$PWD
 
-unix:contains(QT_CONFIG, libudev) {
+unix:qtConfig(libudev) {
     DEFINES += LINK_LIBUDEV
     INCLUDEPATH += $$QMAKE_INCDIR_LIBUDEV
     LIBS_PRIVATE += $$QMAKE_LIBS_LIBUDEV
@@ -25,12 +25,6 @@ win32:!wince* {
         $$PWD/qserialportinfo_win.cpp
 
     LIBS_PRIVATE += -lsetupapi -ladvapi32
-}
-
-wince* {
-    SOURCES += \
-        $$PWD/qserialport_wince.cpp \
-        $$PWD/qserialportinfo_wince.cpp
 }
 
 unix {

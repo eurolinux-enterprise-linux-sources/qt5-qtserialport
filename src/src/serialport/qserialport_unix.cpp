@@ -3,31 +3,37 @@
 ** Copyright (C) 2012 Denis Shienkov <denis.shienkov@gmail.com>
 ** Copyright (C) 2012 Laszlo Papp <lpapp@kde.org>
 ** Copyright (C) 2012 Andre Hartmann <aha_1980@gmx.de>
-** Contact: http://www.qt.io/licensing/
+** Contact: https://www.qt.io/licensing/
 **
 ** This file is part of the QtSerialPort module of the Qt Toolkit.
 **
-** $QT_BEGIN_LICENSE:LGPL21$
+** $QT_BEGIN_LICENSE:LGPL$
 ** Commercial License Usage
 ** Licensees holding valid commercial Qt licenses may use this file in
 ** accordance with the commercial license agreement provided with the
 ** Software or, alternatively, in accordance with the terms contained in
 ** a written agreement between you and The Qt Company. For licensing terms
-** and conditions see http://www.qt.io/terms-conditions. For further
-** information use the contact form at http://www.qt.io/contact-us.
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
 **
 ** GNU Lesser General Public License Usage
 ** Alternatively, this file may be used under the terms of the GNU Lesser
-** General Public License version 2.1 or version 3 as published by the Free
-** Software Foundation and appearing in the file LICENSE.LGPLv21 and
-** LICENSE.LGPLv3 included in the packaging of this file. Please review the
-** following information to ensure the GNU Lesser General Public License
-** requirements will be met: https://www.gnu.org/licenses/lgpl.html and
-** http://www.gnu.org/licenses/old-licenses/lgpl-2.1.html.
+** General Public License version 3 as published by the Free Software
+** Foundation and appearing in the file LICENSE.LGPL3 included in the
+** packaging of this file. Please review the following information to
+** ensure the GNU Lesser General Public License version 3 requirements
+** will be met: https://www.gnu.org/licenses/lgpl-3.0.html.
 **
-** As a special exception, The Qt Company gives you certain additional
-** rights. These rights are described in The Qt Company LGPL Exception
-** version 1.1, included in the file LGPL_EXCEPTION.txt in this package.
+** GNU General Public License Usage
+** Alternatively, this file may be used under the terms of the GNU
+** General Public License version 2.0 or (at your option) the GNU General
+** Public license version 3 or any later version approved by the KDE Free
+** Qt Foundation. The licenses are as published by the Free Software
+** Foundation and appearing in the file LICENSE.GPL2 and LICENSE.GPL3
+** included in the packaging of this file. Please review the following
+** information to ensure the GNU General Public License requirements will
+** be met: https://www.gnu.org/licenses/gpl-2.0.html and
+** https://www.gnu.org/licenses/gpl-3.0.html.
 **
 ** $QT_END_LICENSE$
 **
@@ -54,7 +60,13 @@
 
 #ifdef Q_OS_LINUX
 
-# if !defined(Q_OS_ANDROID) || !defined(Q_PROCESSOR_X86)
+# ifdef Q_OS_ANDROID
+#  include <android/api-level.h>
+# else
+#  define __ANDROID_API__ 21
+# endif
+
+# if !defined(Q_OS_ANDROID) || (!defined(Q_PROCESSOR_X86) && __ANDROID_API__ < 21)
 struct termios2 {
     tcflag_t c_iflag;       /* input mode flags */
     tcflag_t c_oflag;       /* output mode flags */
@@ -119,7 +131,7 @@ QString serialPortLockFilePath(const QString &portName)
 
     QString lockFilePath;
 
-    foreach (const QString &lockDirectoryPath, lockDirectoryPaths) {
+    for (const QString &lockDirectoryPath : lockDirectoryPaths) {
         const QString filePath = lockDirectoryPath + fileName;
 
         QFileInfo lockDirectoryInfo(lockDirectoryPath);
@@ -133,7 +145,7 @@ QString serialPortLockFilePath(const QString &portName)
 
     if (lockFilePath.isEmpty()) {
         qWarning("The following directories are not readable or writable for detaling with lock files\n");
-        foreach (const QString &lockDirectoryPath, lockDirectoryPaths)
+        for (const QString &lockDirectoryPath : lockDirectoryPaths)
             qWarning("\t%s\n", qPrintable(lockDirectoryPath));
         return QString();
     }
@@ -186,6 +198,120 @@ protected:
 private:
     QSerialPortPrivate *dptr;
 };
+
+static inline void qt_set_common_props(termios *tio, QIODevice::OpenMode m)
+{
+#ifdef Q_OS_SOLARIS
+    tio->c_iflag &= ~(IMAXBEL|IGNBRK|BRKINT|PARMRK|ISTRIP|INLCR|IGNCR|ICRNL|IXON);
+    tio->c_oflag &= ~OPOST;
+    tio->c_lflag &= ~(ECHO|ECHONL|ICANON|ISIG|IEXTEN);
+    tio->c_cflag &= ~(CSIZE|PARENB);
+    tio->c_cflag |= CS8;
+#else
+    ::cfmakeraw(tio);
+#endif
+
+    tio->c_cflag |= CLOCAL;
+    tio->c_cc[VTIME] = 0;
+    tio->c_cc[VMIN] = 0;
+
+    if (m & QIODevice::ReadOnly)
+        tio->c_cflag |= CREAD;
+}
+
+static inline void qt_set_databits(termios *tio, QSerialPort::DataBits databits)
+{
+    tio->c_cflag &= ~CSIZE;
+    switch (databits) {
+    case QSerialPort::Data5:
+        tio->c_cflag |= CS5;
+        break;
+    case QSerialPort::Data6:
+        tio->c_cflag |= CS6;
+        break;
+    case QSerialPort::Data7:
+        tio->c_cflag |= CS7;
+        break;
+    case QSerialPort::Data8:
+        tio->c_cflag |= CS8;
+        break;
+    default:
+        tio->c_cflag |= CS8;
+        break;
+    }
+}
+
+static inline void qt_set_parity(termios *tio, QSerialPort::Parity parity)
+{
+    tio->c_iflag &= ~(PARMRK | INPCK);
+    tio->c_iflag |= IGNPAR;
+
+    switch (parity) {
+
+#ifdef CMSPAR
+    // Here Installation parity only for GNU/Linux where the macro CMSPAR.
+    case QSerialPort::SpaceParity:
+        tio->c_cflag &= ~PARODD;
+        tio->c_cflag |= PARENB | CMSPAR;
+        break;
+    case QSerialPort::MarkParity:
+        tio->c_cflag |= PARENB | CMSPAR | PARODD;
+        break;
+#endif
+    case QSerialPort::NoParity:
+        tio->c_cflag &= ~PARENB;
+        break;
+    case QSerialPort::EvenParity:
+        tio->c_cflag &= ~PARODD;
+        tio->c_cflag |= PARENB;
+        break;
+    case QSerialPort::OddParity:
+        tio->c_cflag |= PARENB | PARODD;
+        break;
+    default:
+        tio->c_cflag |= PARENB;
+        tio->c_iflag |= PARMRK | INPCK;
+        tio->c_iflag &= ~IGNPAR;
+        break;
+    }
+}
+
+static inline void qt_set_stopbits(termios *tio, QSerialPort::StopBits stopbits)
+{
+    switch (stopbits) {
+    case QSerialPort::OneStop:
+        tio->c_cflag &= ~CSTOPB;
+        break;
+    case QSerialPort::TwoStop:
+        tio->c_cflag |= CSTOPB;
+        break;
+    default:
+        tio->c_cflag &= ~CSTOPB;
+        break;
+    }
+}
+
+static inline void qt_set_flowcontrol(termios *tio, QSerialPort::FlowControl flowcontrol)
+{
+    switch (flowcontrol) {
+    case QSerialPort::NoFlowControl:
+        tio->c_cflag &= ~CRTSCTS;
+        tio->c_iflag &= ~(IXON | IXOFF | IXANY);
+        break;
+    case QSerialPort::HardwareControl:
+        tio->c_cflag |= CRTSCTS;
+        tio->c_iflag &= ~(IXON | IXOFF | IXANY);
+        break;
+    case QSerialPort::SoftwareControl:
+        tio->c_cflag &= ~CRTSCTS;
+        tio->c_iflag |= IXON | IXOFF | IXANY;
+        break;
+    default:
+        tio->c_cflag &= ~CRTSCTS;
+        tio->c_iflag &= ~(IXON | IXOFF | IXANY);
+        break;
+    }
+}
 
 bool QSerialPortPrivate::open(QIODevice::OpenMode mode)
 {
@@ -245,14 +371,14 @@ void QSerialPortPrivate::close()
 #endif
 
     delete readNotifier;
-    readNotifier = Q_NULLPTR;
+    readNotifier = nullptr;
 
     delete writeNotifier;
-    writeNotifier = Q_NULLPTR;
+    writeNotifier = nullptr;
 
     qt_safe_close(descriptor);
 
-    lockFileScopedPointer.reset(Q_NULLPTR);
+    lockFileScopedPointer.reset(nullptr);
 
     descriptor = -1;
     pendingBytesWritten = 0;
@@ -404,7 +530,7 @@ bool QSerialPortPrivate::waitForBytesWritten(int msecs)
     QElapsedTimer stopWatch;
     stopWatch.start();
 
-    forever {
+    for (;;) {
         bool readyToRead = false;
         bool readyToWrite = false;
         if (!waitForReadOrWrite(&readyToRead, &readyToWrite, true, !writeBuffer.isEmpty(),
@@ -599,24 +725,8 @@ bool QSerialPortPrivate::setDataBits(QSerialPort::DataBits dataBits)
     if (!getTermios(&tio))
         return false;
 
-    tio.c_cflag &= ~CSIZE;
-    switch (dataBits) {
-    case QSerialPort::Data5:
-        tio.c_cflag |= CS5;
-        break;
-    case QSerialPort::Data6:
-        tio.c_cflag |= CS6;
-        break;
-    case QSerialPort::Data7:
-        tio.c_cflag |= CS7;
-        break;
-    case QSerialPort::Data8:
-        tio.c_cflag |= CS8;
-        break;
-    default:
-        tio.c_cflag |= CS8;
-        break;
-    }
+    qt_set_databits(&tio, dataBits);
+
     return setTermios(&tio);
 }
 
@@ -626,37 +736,7 @@ bool QSerialPortPrivate::setParity(QSerialPort::Parity parity)
     if (!getTermios(&tio))
         return false;
 
-    tio.c_iflag &= ~(PARMRK | INPCK);
-    tio.c_iflag |= IGNPAR;
-
-    switch (parity) {
-
-#ifdef CMSPAR
-    // Here Installation parity only for GNU/Linux where the macro CMSPAR.
-    case QSerialPort::SpaceParity:
-        tio.c_cflag &= ~PARODD;
-        tio.c_cflag |= PARENB | CMSPAR;
-        break;
-    case QSerialPort::MarkParity:
-        tio.c_cflag |= PARENB | CMSPAR | PARODD;
-        break;
-#endif
-    case QSerialPort::NoParity:
-        tio.c_cflag &= ~PARENB;
-        break;
-    case QSerialPort::EvenParity:
-        tio.c_cflag &= ~PARODD;
-        tio.c_cflag |= PARENB;
-        break;
-    case QSerialPort::OddParity:
-        tio.c_cflag |= PARENB | PARODD;
-        break;
-    default:
-        tio.c_cflag |= PARENB;
-        tio.c_iflag |= PARMRK | INPCK;
-        tio.c_iflag &= ~IGNPAR;
-        break;
-    }
+    qt_set_parity(&tio, parity);
 
     return setTermios(&tio);
 }
@@ -667,17 +747,8 @@ bool QSerialPortPrivate::setStopBits(QSerialPort::StopBits stopBits)
     if (!getTermios(&tio))
         return false;
 
-    switch (stopBits) {
-    case QSerialPort::OneStop:
-        tio.c_cflag &= ~CSTOPB;
-        break;
-    case QSerialPort::TwoStop:
-        tio.c_cflag |= CSTOPB;
-        break;
-    default:
-        tio.c_cflag &= ~CSTOPB;
-        break;
-    }
+    qt_set_stopbits(&tio, stopBits);
+
     return setTermios(&tio);
 }
 
@@ -687,24 +758,8 @@ bool QSerialPortPrivate::setFlowControl(QSerialPort::FlowControl flowControl)
     if (!getTermios(&tio))
         return false;
 
-    switch (flowControl) {
-    case QSerialPort::NoFlowControl:
-        tio.c_cflag &= ~CRTSCTS;
-        tio.c_iflag &= ~(IXON | IXOFF | IXANY);
-        break;
-    case QSerialPort::HardwareControl:
-        tio.c_cflag |= CRTSCTS;
-        tio.c_iflag &= ~(IXON | IXOFF | IXANY);
-        break;
-    case QSerialPort::SoftwareControl:
-        tio.c_cflag &= ~CRTSCTS;
-        tio.c_iflag |= IXON | IXOFF | IXANY;
-        break;
-    default:
-        tio.c_cflag &= ~CRTSCTS;
-        tio.c_iflag &= ~(IXON | IXOFF | IXANY);
-        break;
-    }
+    qt_set_flowcontrol(&tio, flowControl);
+
     return setTermios(&tio);
 }
 
@@ -718,7 +773,7 @@ bool QSerialPortPrivate::readNotification()
 
     if (readBufferMaxSize && bytesToRead > (readBufferMaxSize - buffer.size())) {
         bytesToRead = readBufferMaxSize - buffer.size();
-        if (bytesToRead == 0) {
+        if (bytesToRead <= 0) {
             // Buffer is full. User must read data from the buffer
             // before we can read more from the port.
             setReadNotificationEnabled(false);
@@ -729,6 +784,8 @@ bool QSerialPortPrivate::readNotification()
     char *ptr = buffer.reserve(bytesToRead);
     const qint64 readBytes = readFromPort(ptr, bytesToRead);
 
+    buffer.chop(bytesToRead - qMax(readBytes, qint64(0)));
+
     if (readBytes <= 0) {
         QSerialPortErrorInfo error = getSystemError();
         if (error.errorCode != QSerialPort::ResourceError)
@@ -736,11 +793,8 @@ bool QSerialPortPrivate::readNotification()
         else
             setReadNotificationEnabled(false);
         setError(error);
-        buffer.chop(bytesToRead);
         return false;
     }
-
-    buffer.chop(bytesToRead - qMax(readBytes, qint64(0)));
 
     newBytes = buffer.size() - newBytes;
 
@@ -819,23 +873,17 @@ inline bool QSerialPortPrivate::initialize(QIODevice::OpenMode mode)
         return false;
 
     restoredTermios = tio;
-#ifdef Q_OS_SOLARIS
-    tio.c_iflag &= ~(IMAXBEL|IGNBRK|BRKINT|PARMRK|ISTRIP|INLCR|IGNCR|ICRNL|IXON);
-    tio.c_oflag &= ~OPOST;
-    tio.c_lflag &= ~(ECHO|ECHONL|ICANON|ISIG|IEXTEN);
-    tio.c_cflag &= ~(CSIZE|PARENB);
-    tio.c_cflag |= CS8;
-#else
-    ::cfmakeraw(&tio);
-#endif
-    tio.c_cflag |= CLOCAL;
-    tio.c_cc[VTIME] = 0;
-    tio.c_cc[VMIN] = 0;
 
-    if (mode & QIODevice::ReadOnly)
-        tio.c_cflag |= CREAD;
+    qt_set_common_props(&tio, mode);
+    qt_set_databits(&tio, dataBits);
+    qt_set_parity(&tio, parity);
+    qt_set_stopbits(&tio, stopBits);
+    qt_set_flowcontrol(&tio, flowControl);
 
     if (!setTermios(&tio))
+        return false;
+
+    if (!setBaudRate())
         return false;
 
     if (mode & QIODevice::ReadOnly)
@@ -846,7 +894,7 @@ inline bool QSerialPortPrivate::initialize(QIODevice::OpenMode mode)
 
 qint64 QSerialPortPrivate::writeData(const char *data, qint64 maxSize)
 {
-    ::memcpy(writeBuffer.reserve(maxSize), data, maxSize);
+    writeBuffer.append(data, maxSize);
     if (!writeBuffer.isEmpty() && !isWriteNotificationEnabled())
         setWriteNotificationEnabled(true);
     return maxSize;
@@ -976,21 +1024,15 @@ bool QSerialPortPrivate::waitForReadOrWrite(bool *selectForRead, bool *selectFor
     Q_ASSERT(selectForRead);
     Q_ASSERT(selectForWrite);
 
-    fd_set fdread;
-    FD_ZERO(&fdread);
+    pollfd pfd = qt_make_pollfd(descriptor, 0);
+
     if (checkRead)
-        FD_SET(descriptor, &fdread);
+        pfd.events |= POLLIN;
 
-    fd_set fdwrite;
-    FD_ZERO(&fdwrite);
     if (checkWrite)
-        FD_SET(descriptor, &fdwrite);
+        pfd.events |= POLLOUT;
 
-    struct timespec tv;
-    tv.tv_sec = msecs / 1000;
-    tv.tv_nsec = (msecs % 1000) * 1000 * 1000;
-
-    const int ret = qt_safe_select(descriptor + 1, &fdread, &fdwrite, 0, msecs < 0 ? 0 : &tv);
+    const int ret = qt_poll_msecs(&pfd, 1, msecs);
     if (ret < 0) {
         setError(getSystemError());
         return false;
@@ -999,9 +1041,13 @@ bool QSerialPortPrivate::waitForReadOrWrite(bool *selectForRead, bool *selectFor
         setError(QSerialPortErrorInfo(QSerialPort::TimeoutError));
         return false;
     }
+    if (pfd.revents & POLLNVAL) {
+        setError(getSystemError(EBADF));
+        return false;
+    }
 
-    *selectForRead = FD_ISSET(descriptor, &fdread);
-    *selectForWrite = FD_ISSET(descriptor, &fdwrite);
+    *selectForWrite = ((pfd.revents & POLLOUT) != 0);
+    *selectForRead = ((pfd.revents & POLLIN) != 0);
     return true;
 }
 
